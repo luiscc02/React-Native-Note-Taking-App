@@ -1,87 +1,91 @@
 import React, { useRef, useState } from 'react';
-import { View, Text, StyleSheet, Dimensions, PanResponder, Button, Image } from 'react-native';
+import { View, Text, StyleSheet, useWindowDimensions, PanResponder, Button, Image, Platform } from 'react-native';
 import {
   Canvas,
   Path,
   Skia,
   Group,
-  PaintStyle,
   Paint,
 } from '@shopify/react-native-skia';
 
-const { width, height } = Dimensions.get('window');
-
 // Change this if your file name or path differs
 const templateImage = require('../assets/cornell.png');
+const PAGE_ASPECT_RATIO = 1700 / 2200;
+
+// Paint props for each stroke mode. The eraser's dstOut blend only removes ink
+// because the strokes are drawn inside their own layer (see the Group below).
+const strokeProps = {
+  draw: { color: 'black', strokeWidth: 2 },
+  erase: { color: 'black', strokeWidth: 20, blendMode: 'dstOut' },
+};
 
 export default function NoteEditor({ route }) {
   const { template } = route.params;
+  const { width, height } = useWindowDimensions();
+
+  // Largest page with the template's proportions that fits the available space
+  const pageWidth = Math.min(width * 0.9, height * 0.7 * PAGE_ASPECT_RATIO);
+  const pageHeight = pageWidth / PAGE_ASPECT_RATIO;
 
   // Keep a single array of strokes. Each stroke is { path, mode }.
   // mode: 'draw' or 'erase'
   const [strokes, setStrokes] = useState([]);
 
-  // Current stroke being drawn
+  // Current stroke being drawn. The ref is what the gesture handlers extend;
+  // the state holds a copy so each move re-renders the stroke in progress.
   const currentPathRef = useRef(null);
+  const [currentPath, setCurrentPath] = useState(null);
+
+  // Where the current stroke started, relative to the drawing surface
+  const startPointRef = useRef({ x: 0, y: 0 });
 
   // Toggle for eraser mode
   const [isEraser, setIsEraser] = useState(false);
 
-  // Paint for normal drawing (black lines)
-  const drawPaint = Skia.Paint();
-  drawPaint.setColor(Skia.Color('black'));
-  drawPaint.setStyle(PaintStyle.Stroke);
-  drawPaint.setStrokeWidth(2);
+  // The PanResponder below is only created once, so it reads the mode from a ref
+  const isEraserRef = useRef(isEraser);
+  isEraserRef.current = isEraser;
 
-  // Paint for eraser (using blend mode if your device supports it)
-  const erasePaint = Skia.Paint();
-  erasePaint.setStyle(PaintStyle.Stroke);
-  erasePaint.setStrokeWidth(20);
+  // Save the stroke in progress, if there is one
+  const finishStroke = () => {
+    if (!currentPathRef.current) return;
+    const finishedPath = currentPathRef.current;
 
-  // If your Skia version supports blend modes, set one here
-  // e.g. Skia.BlendMode.Clear or Skia.BlendMode.DstOut
-  // If your device doesn’t support it, you may see black lines
-  if (Skia.BlendMode) {
-    erasePaint.setBlendMode(Skia.BlendMode.DstOut);
-  } else {
-    // fallback if BlendMode is undefined
-    // This will draw white strokes instead, which only works well
-    // if your background is plain white
-    erasePaint.setColor(Skia.Color('white'));
-  }
+    // Save the stroke with its mode
+    setStrokes((prev) => [
+      ...prev,
+      { path: finishedPath, mode: isEraserRef.current ? 'erase' : 'draw' },
+    ]);
 
-  // Decide which paint to use for the current stroke preview
-  const getPreviewPaint = () => (isEraser ? erasePaint : drawPaint);
+    currentPathRef.current = null;
+    setCurrentPath(null);
+  };
 
   // PanResponder for capturing stylus or finger input
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
       onPanResponderGrant: (evt) => {
         const { locationX, locationY } = evt.nativeEvent;
+        startPointRef.current = { x: locationX, y: locationY };
         const newPath = Skia.Path.Make();
         newPath.moveTo(locationX, locationY);
         currentPathRef.current = newPath;
+        setCurrentPath(newPath.copy());
       },
-      onPanResponderMove: (evt) => {
-        const { locationX, locationY } = evt.nativeEvent;
-        if (currentPathRef.current) {
-          currentPathRef.current.lineTo(locationX, locationY);
-        }
-      },
-      onPanResponderRelease: () => {
+      onPanResponderMove: (evt, gestureState) => {
         if (!currentPathRef.current) return;
-        // Create a copy for the final stroke
-        const finishedPath = currentPathRef.current.copy();
-
-        // Save the stroke with its mode
-        setStrokes((prev) => [
-          ...prev,
-          { path: finishedPath, mode: isEraser ? 'erase' : 'draw' },
-        ]);
-
-        currentPathRef.current = null;
+        // Use the distance moved, not locationX/Y: those are relative to whichever
+        // view is under the pointer, which changes if the stroke leaves the surface.
+        currentPathRef.current.lineTo(
+          startPointRef.current.x + gestureState.dx,
+          startPointRef.current.y + gestureState.dy
+        );
+        setCurrentPath(currentPathRef.current.copy());
       },
+      onPanResponderRelease: () => finishStroke(),
+      onPanResponderTerminate: () => finishStroke(),
     })
   ).current;
 
@@ -94,6 +98,7 @@ export default function NoteEditor({ route }) {
   const handleClear = () => {
     setStrokes([]);
     currentPathRef.current = null;
+    setCurrentPath(null);
   };
 
   // Toggle between drawing and erasing
@@ -102,7 +107,7 @@ export default function NoteEditor({ route }) {
   };
 
   return (
-    <View style={styles.container} {...panResponder.panHandlers}>
+    <View style={styles.container}>
       <Text style={styles.title}>🖋️ {template}</Text>
 
       <View style={styles.buttonContainer}>
@@ -115,25 +120,39 @@ export default function NoteEditor({ route }) {
         />
       </View>
 
-      <View style={styles.canvasWrapper}>
+      <View style={[styles.canvasWrapper, { width: pageWidth, height: pageHeight }]}>
         {/* Background (Cornell notes) */}
         <Image source={templateImage} style={styles.backgroundImage} resizeMode="stretch" />
 
         {/* Drawing Canvas */}
         <Canvas style={styles.canvas}>
-          <Group>
-            {strokes.map((stroke, i) => {
-              // Decide paint for each stroke based on its stored mode
-              const paint = stroke.mode === 'erase' ? erasePaint : drawPaint;
-              return <Path key={i} path={stroke.path} paint={paint} />;
-            })}
+          <Group layer={<Paint />}>
+            {strokes.map((stroke, i) => (
+              <Path
+                key={i}
+                path={stroke.path}
+                style="stroke"
+                strokeCap="round"
+                strokeJoin="round"
+                {...strokeProps[stroke.mode]}
+              />
+            ))}
 
             {/* Show the current in-progress stroke */}
-            {currentPathRef.current && (
-              <Path path={currentPathRef.current} paint={getPreviewPaint()} />
+            {currentPath && (
+              <Path
+                path={currentPath}
+                style="stroke"
+                strokeCap="round"
+                strokeJoin="round"
+                {...strokeProps[isEraser ? 'erase' : 'draw']}
+              />
             )}
           </Group>
         </Canvas>
+
+        {/* Empty view on top of the canvas, so touches are always relative to it */}
+        <View style={styles.touchSurface} {...panResponder.panHandlers} />
       </View>
     </View>
   );
@@ -157,8 +176,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-around',
   },
   canvasWrapper: {
-    width: width * 0.9,
-    height: height * 0.7,
     position: 'relative',
     backgroundColor: '#fff',
     borderColor: '#ccc',
@@ -175,6 +192,11 @@ const styles = StyleSheet.create({
   canvas: {
     flex: 1,
     zIndex: 1,
+  },
+  touchSurface: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 2,
+    ...Platform.select({ web: { cursor: 'crosshair', touchAction: 'none', userSelect: 'none' } }),
   },
 });
 

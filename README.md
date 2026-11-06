@@ -45,13 +45,14 @@ npm run web
 │   ├── TemplatePicker.js # Template list
 │   └── NoteEditor.js     # Drawing canvas
 ├── index.js              # App entry
+├── index.web.js          # Web entry, loads Skia before the app
 └── package.json          # Scripts + dependencies
 ```
 
 ## Notes
 
 - The current background image for the note editor is `assets/cornell.png`. Replace or extend this image to add more templates.
-- Drawing uses `@shopify/react-native-skia`, which may require additional setup for certain platforms.
+- Drawing uses `@shopify/react-native-skia`. On web it needs `public/canvaskit.wasm`, which `npm install` copies there.
 
 ## License
 
