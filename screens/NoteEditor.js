@@ -10,6 +10,7 @@ import {
 
 // Change this if your file name or path differs
 const templateImage = require('../assets/cornell.png');
+const PAGE_ASPECT_RATIO = 1700 / 2200;
 
 // Paint props for each stroke mode. The eraser's dstOut blend only removes ink
 // because the strokes are drawn inside their own layer (see the Group below).
@@ -21,6 +22,10 @@ const strokeProps = {
 export default function NoteEditor({ route }) {
   const { template } = route.params;
   const { width, height } = useWindowDimensions();
+
+  // Largest page with the template's proportions that fits the available space
+  const pageWidth = Math.min(width * 0.9, height * 0.7 * PAGE_ASPECT_RATIO);
+  const pageHeight = pageWidth / PAGE_ASPECT_RATIO;
 
   // Keep a single array of strokes. Each stroke is { path, mode }.
   // mode: 'draw' or 'erase'
@@ -115,7 +120,7 @@ export default function NoteEditor({ route }) {
         />
       </View>
 
-      <View style={[styles.canvasWrapper, { width: width * 0.9, height: height * 0.7 }]}>
+      <View style={[styles.canvasWrapper, { width: pageWidth, height: pageHeight }]}>
         {/* Background (Cornell notes) */}
         <Image source={templateImage} style={styles.backgroundImage} resizeMode="stretch" />
 
