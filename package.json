@@ -2,18 +2,19 @@
   "name": "mynoteapp",
   "license": "0BSD",
   "version": "1.0.0",
-  "main": "index.js",
+  "main": "index",
   "scripts": {
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "postinstall": "setup-skia-web"
   },
   "dependencies": {
     "@expo/metro-runtime": "~4.0.1",
     "@react-navigation/native": "^7.1.5",
     "@react-navigation/native-stack": "^7.3.9",
-    "@shopify/react-native-skia": "^0.1.231",
+    "@shopify/react-native-skia": "1.5.0",
     "expo": "~52.0.43",
     "expo-status-bar": "~2.0.1",
     "react": "18.3.1",

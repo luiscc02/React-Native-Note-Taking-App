@@ -9,6 +9,9 @@ dist/
 web-build/
 expo-env.d.ts
 
+# Skia web runtime, copied from node_modules by the postinstall script
+public/canvaskit.wasm
+
 # Native
 *.orig.*
 *.jks
